@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .client import G2BClient
@@ -43,8 +43,12 @@ def yyyymmddhhmm(dt: datetime) -> str:
 def yesterday_range_kst(now: datetime | None = None) -> tuple[str, str]:
     now = now or datetime.now(tz=KST)
     y = (now - timedelta(days=1)).date()
-    start = datetime(y.year, y.month, y.day, 0, 0, tzinfo=KST)
-    end = datetime(y.year, y.month, y.day, 23, 59, tzinfo=KST)
+    return date_range_kst(y)
+
+
+def date_range_kst(target_date: date) -> tuple[str, str]:
+    start = datetime(target_date.year, target_date.month, target_date.day, 0, 0, tzinfo=KST)
+    end = datetime(target_date.year, target_date.month, target_date.day, 23, 59, tzinfo=KST)
     return yyyymmddhhmm(start), yyyymmddhhmm(end)
 
 
@@ -61,9 +65,12 @@ def fetch_yesterday_bids(
     orgs: list[str] | None = None,
     use_demand_org: bool = False,
     num_of_rows: int = 100,
+    target_date: date | None = None,
 ) -> dict:
     client = G2BClient.from_env()
-    inqry_bgn_dt, inqry_end_dt = yesterday_range_kst()
+    inqry_bgn_dt, inqry_end_dt = (
+        date_range_kst(target_date) if target_date else yesterday_range_kst()
+    )
 
     results: list[dict] = []
     seen: set[tuple[str, str]] = set()
@@ -129,6 +136,11 @@ def main() -> int:
         help="페이지당 건수(numOfRows). 너무 크게 하면 응답이 느릴 수 있습니다.",
     )
     p.add_argument(
+        "--target-date",
+        default=None,
+        help="조회할 공고게시일(YYYY-MM-DD). 기본값: 어제(KST)",
+    )
+    p.add_argument(
         "--pretty",
         action="store_true",
         help="JSON pretty-print 출력",
@@ -139,6 +151,7 @@ def main() -> int:
         orgs=args.org,
         use_demand_org=args.use_demand_org,
         num_of_rows=args.num_of_rows,
+        target_date=date.fromisoformat(args.target_date) if args.target_date else None,
     )
 
     if args.pretty:

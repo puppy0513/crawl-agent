@@ -5,7 +5,7 @@ import mimetypes
 import json
 import os
 import smtplib
-from datetime import datetime
+from datetime import date, datetime
 from email.message import EmailMessage
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -24,6 +24,10 @@ DEFAULT_EMAIL_TO = "bjh@openeg.co.kr"
 
 def today_kst() -> str:
     return datetime.now(tz=KST).strftime("%Y-%m-%d")
+
+
+def moel_date(target_date: date) -> str:
+    return target_date.strftime("%Y.%m.%d")
 
 
 def load_env(path: str = ".env") -> None:
@@ -186,6 +190,12 @@ def build_analysis_prompt(result: dict, *, report_date: str) -> str:
 - 현재 요청의 최종 산출물은 사람이 읽을 Markdown 보고서입니다. 따라서 skills.md의 "JSON만 출력" 규칙은 내부 평가 형식 참고용으로만 사용하고, 최종 답변은 Markdown으로만 작성하세요.
 - 공고 본문과 첨부파일 텍스트가 없는 항목은 그 한계를 명확히 표시하세요.
 - 추정이 필요한 내용은 단정하지 말고 "확인 필요"로 적으세요.
+- 교육용역, 보안교육, 개발보안, 시큐어코딩, 보안인식 제고가 명확하지 않은 데이터 구축·데이터 개방·AI 모델 개발·SI 개발 공고는 최종 등급을 C 이하로 평가하세요.
+- SI 개발, 개발외주, 시스템 통합, 업무시스템 구축이 핵심이면 최종 등급은 반드시 D로 두세요.
+- 데이터 구축, 데이터 개방, 데이터 분석모델 개발, 플랫폼 구축, LMS 구축, 앱·웹 개발, 포털 구축이 핵심이면 최종 점수에서 크게 감점하고 추천 상위 Top 5에 올리지 마세요.
+- 공고명에 AI, 데이터, 플랫폼이 있어도 교육 또는 보안 목적이 확인되지 않으면 교육사업으로 추정하지 마세요.
+- 목록 데이터만 있고 과업지시서/제안요청서 본문이 없으면 "교육 요소 추가 가능성" 같은 가정을 점수 상승 사유로 쓰지 마세요. 그런 경우는 "확인 필요"로 두고 보수적으로 평가하세요.
+- 개발외주나 SI 개발은 오픈이지의 주력 사업이 아니므로 예산이 크더라도 높은 점수를 주지 마세요.
 - Markdown 코드블록으로 감싸지 말고, 보고서 본문만 출력하세요.
 
 보고서 필수 구성:
@@ -324,10 +334,12 @@ def send_email_report(
         smtp.send_message(message)
 
 
-def crawl_yesterday_notices() -> dict:
-    moel_notices = fetch_yesterday_notices()
+def crawl_yesterday_notices(target_date: date | None = None) -> dict:
+    moel_notices = fetch_yesterday_notices(
+        target_date=moel_date(target_date) if target_date else None
+    )
     return {
-        "g2b": fetch_yesterday_bids(),
+        "g2b": fetch_yesterday_bids(target_date=target_date),
         "moel": {
             "count": len(moel_notices or []),
             "items": moel_notices,
@@ -354,6 +366,11 @@ def main() -> int:
         help="Markdown 보고서를 저장할 디렉터리. 기본값: 현재 디렉터리",
     )
     parser.add_argument(
+        "--target-date",
+        default=None,
+        help="조회할 공고일(YYYY-MM-DD). 기본값: 어제(KST)",
+    )
+    parser.add_argument(
         "--model",
         default=None,
         help=f"OpenAI 모델명. 기본값: OPENAI_MODEL 환경변수 또는 {DEFAULT_OPENAI_MODEL}",
@@ -377,9 +394,10 @@ def main() -> int:
     args = parser.parse_args()
 
     load_env()
-    out = crawl_yesterday_notices()
+    target_date = date.fromisoformat(args.target_date) if args.target_date else None
+    out = crawl_yesterday_notices(target_date=target_date)
 
-    report_date = today_kst()
+    report_date = target_date.isoformat() if target_date else today_kst()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
