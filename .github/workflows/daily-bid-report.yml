@@ -1,0 +1,49 @@
+name: Daily Bid Report
+
+on:
+  schedule:
+    # 08:00 Asia/Seoul = 23:00 UTC on the previous day.
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and email bid report
+        env:
+          G2B_SERVICE_KEY: ${{ secrets.G2B_SERVICE_KEY }}
+          CHATGPT_API_KEY: ${{ secrets.CHATGPT_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+        run: python fetch_yesterday_all.py --send-email
+
+      - name: Upload generated report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bid-report
+          path: |
+            *_발주공고목록.md
+            *_발주공고목록.json
+          if-no-files-found: ignore

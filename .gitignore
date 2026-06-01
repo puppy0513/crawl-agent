@@ -2,6 +2,9 @@
 __pycache__/
 *.py[codz]
 *$py.class
+.DS_Store
+*_발주공고목록.md
+*_발주공고목록.json
 
 # C extensions
 *.so
