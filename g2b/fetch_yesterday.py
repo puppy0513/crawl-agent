@@ -13,6 +13,27 @@ DEFAULT_ORGS = [
     "한국인터넷진흥원",
     "한국지능정보사회진흥원",
 ]
+OUTPUT_FIELDS = [
+    "bidNtceNm",
+    "bidNtceNo",
+    "dminsttNm",
+    "ntceInsttNm",
+    "bidBeginDt",
+    "bidClseDt",
+    "bidQlfctRgstDt",
+    "cmmnSpldmdAgrmntClseDt",
+    "asignBdgtAmt",
+    "presmptPrce",
+    "VAT",
+    "bidPrtcptFee",
+    "cntrctCnclsMthdNm",
+    "sucsfbidMthdNm",
+    "techAbltEvlRt",
+    "bidPrceEvlRt",
+    "prearngPrceDcsnMthdNm",
+    "cmmnSpldmdMethdNm",
+    "indstrytyLmtYn",
+]
 
 
 def yyyymmddhhmm(dt: datetime) -> str:
@@ -29,6 +50,61 @@ def yesterday_range_kst(now: datetime | None = None) -> tuple[str, str]:
 
 def normalize_org(s: str) -> str:
     return (s or "").strip()
+
+
+def select_output_fields(item: dict) -> dict:
+    return {field: item.get(field, "") for field in OUTPUT_FIELDS}
+
+
+def fetch_yesterday_bids(
+    *,
+    orgs: list[str] | None = None,
+    use_demand_org: bool = False,
+    num_of_rows: int = 100,
+) -> dict:
+    client = G2BClient.from_env()
+    inqry_bgn_dt, inqry_end_dt = yesterday_range_kst()
+
+    results: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    normalized_orgs = [normalize_org(x) for x in (orgs or DEFAULT_ORGS) if normalize_org(x)]
+    search_fields = ("dminstt_nm",) if use_demand_org else ("ntce_instt_nm", "dminstt_nm")
+
+    for org in normalized_orgs:
+        kwargs = {
+            "inqry_div": 1,  # 공고게시일시
+            "inqry_bgn_dt": inqry_bgn_dt,
+            "inqry_end_dt": inqry_end_dt,
+            "num_of_rows": num_of_rows,
+        }
+
+        for search_field in search_fields:
+            search_kwargs = {**kwargs, search_field: org}
+            for item in client.iter_servc_pps_srch(**search_kwargs):
+                # 문서 응답 예시 기준: srvceDivNm (일반용역/기술용역)
+                if (item.get("srvceDivNm") or "").strip() != "일반용역":
+                    continue
+
+                # 일부 공고는 공고기관/수요기관이 조달청으로 찍히는 케이스가 있어
+                # 최종적으로 둘 중 하나에 기관명이 포함되는지 한 번 더 방어적으로 확인.
+                ntce_instt_nm = (item.get("ntceInsttNm") or "").strip()
+                dminstt_nm = (item.get("dminsttNm") or "").strip()
+                if org not in ntce_instt_nm and org not in dminstt_nm:
+                    continue
+
+                item_key = (
+                    str(item.get("bidNtceNo") or ""),
+                    str(item.get("bidNtceOrd") or ""),
+                )
+                if item_key in seen:
+                    continue
+                seen.add(item_key)
+                results.append(item)
+
+    return {
+        "count": len(results),
+        "items": [select_output_fields(item) for item in results],
+    }
 
 
 def main() -> int:
@@ -59,57 +135,11 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    client = G2BClient.from_env()
-    inqry_bgn_dt, inqry_end_dt = yesterday_range_kst()
-
-    results: list[dict] = []
-    seen: set[tuple[str, str]] = set()
-    orgs = [normalize_org(x) for x in (args.org or DEFAULT_ORGS) if normalize_org(x)]
-    search_fields = ("dminstt_nm",) if args.use_demand_org else ("ntce_instt_nm", "dminstt_nm")
-
-    for org in orgs:
-        kwargs = {
-            "inqry_div": 1,  # 공고게시일시
-            "inqry_bgn_dt": inqry_bgn_dt,
-            "inqry_end_dt": inqry_end_dt,
-            "num_of_rows": args.num_of_rows,
-        }
-
-        for search_field in search_fields:
-            search_kwargs = {**kwargs, search_field: org}
-            for item in client.iter_servc_pps_srch(**search_kwargs):
-                # 문서 응답 예시 기준: srvceDivNm (일반용역/기술용역)
-                if (item.get("srvceDivNm") or "").strip() != "일반용역":
-                    continue
-
-                # 일부 공고는 공고기관/수요기관이 조달청으로 찍히는 케이스가 있어
-                # 최종적으로 둘 중 하나에 기관명이 포함되는지 한 번 더 방어적으로 확인.
-                ntce_instt_nm = (item.get("ntceInsttNm") or "").strip()
-                dminstt_nm = (item.get("dminsttNm") or "").strip()
-                if org not in ntce_instt_nm and org not in dminstt_nm:
-                    continue
-
-                item_key = (
-                    str(item.get("bidNtceNo") or ""),
-                    str(item.get("bidNtceOrd") or ""),
-                )
-                if item_key in seen:
-                    continue
-                seen.add(item_key)
-                results.append(item)
-
-    out = {
-        "query": {
-            "inqryDiv": 1,
-            "inqryBgnDt": inqry_bgn_dt,
-            "inqryEndDt": inqry_end_dt,
-            "orgs": orgs,
-            "searchFields": list(search_fields),
-            "filter": {"srvceDivNm": "일반용역"},
-        },
-        "count": len(results),
-        "items": results,
-    }
+    out = fetch_yesterday_bids(
+        orgs=args.org,
+        use_demand_org=args.use_demand_org,
+        num_of_rows=args.num_of_rows,
+    )
 
     if args.pretty:
         print(json.dumps(out, ensure_ascii=False, indent=2))
