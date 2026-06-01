@@ -21,6 +21,7 @@ OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 DEFAULT_EMAIL_TO = "bjh@openeg.co.kr"
 DOTENV_OVERRIDE_KEYS = {"OPENAI_MODEL"}
+MOEL_REPORT_LABEL = "고용노동부 발주공지(직업능력정책과,인적자원개발과)"
 
 
 def today_kst() -> str:
@@ -134,7 +135,7 @@ def render_g2b_section(lines: list[str], g2b_result: dict) -> None:
 
 def render_moel_section(lines: list[str], moel_result: dict) -> None:
     items = moel_result.get("items") or []
-    lines.append("## 고용노동부 공지사항")
+    lines.append(f"## {MOEL_REPORT_LABEL}")
     lines.append("")
     lines.append(f"- 조회 건수: {len(items)}건")
     lines.append("")
@@ -165,7 +166,7 @@ def render_markdown_report(result: dict, *, report_date: str) -> str:
         "",
         f"- 생성일: {report_date}",
         f"- 나라장터 일반용역: {result['g2b']['count']}건",
-        f"- 고용노동부 공지사항: {result['moel']['count']}건",
+        f"- {MOEL_REPORT_LABEL}: {result['moel']['count']}건",
         "",
     ]
     render_g2b_section(lines, result["g2b"])
@@ -345,6 +346,28 @@ def send_email_report(
         smtp.send_message(message)
 
 
+def build_email_body(
+    *,
+    report_date: str,
+    result: dict,
+    markdown: str,
+    include_report: bool,
+) -> str:
+    notice_count = total_notice_count(result)
+    intro = (
+        f"{report_date} 발주공고가 없습니다.\n\n"
+        if notice_count == 0
+        else f"{report_date} 발주공고 분석 보고서를 아래에 포함하고, Markdown 파일로도 첨부합니다.\n\n"
+    )
+    summary = (
+        f"- 나라장터 일반용역: {result['g2b']['count']}건\n"
+        f"- {MOEL_REPORT_LABEL}: {result['moel']['count']}건\n"
+    )
+    if not include_report:
+        return intro + summary
+    return intro + summary + "\n---\n\n" + markdown
+
+
 def crawl_yesterday_notices(target_date: date | None = None) -> dict:
     moel_notices = fetch_yesterday_notices(
         target_date=moel_date(target_date) if target_date else None
@@ -432,15 +455,23 @@ def main() -> int:
 
     if args.send_email:
         to_addrs = args.email_to or [DEFAULT_EMAIL_TO]
+        notice_count = total_notice_count(out)
+        subject = f"{report_date} 발주공고 목록"
+        attachments = [markdown_path]
+        if notice_count == 0:
+            subject += " (발주공고 0건)"
+            attachments = []
+
         send_email_report(
             to_addrs=to_addrs,
-            subject=f"{report_date} 발주공고 목록",
-            body=(
-                f"{report_date} 발주공고 목록을 첨부합니다.\n\n"
-                f"- 나라장터 일반용역: {out['g2b']['count']}건\n"
-                f"- 고용노동부 공지사항: {out['moel']['count']}건\n"
+            subject=subject,
+            body=build_email_body(
+                report_date=report_date,
+                result=out,
+                markdown=markdown,
+                include_report=notice_count > 0,
             ),
-            attachments=[markdown_path],
+            attachments=attachments,
         )
         print(f"Email sent to: {', '.join(to_addrs)}")
     return 0
