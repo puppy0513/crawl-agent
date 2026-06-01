@@ -174,16 +174,21 @@ python fetch_yesterday_all.py --send-email --email-to bjh@openeg.co.kr --email-t
 
 GitHub 저장소의 `Settings > Secrets and variables > Actions`에 아래 값을 등록해야 합니다.
 
+필수 Secret:
+
 - `G2B_SERVICE_KEY`
 - `CHATGPT_API_KEY` 또는 `OPENAI_API_KEY`
-- `OPENAI_MODEL` (선택)
-- `SMTP_HOST`
-- `SMTP_PORT`
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
+
+선택 Secret:
+
+- `OPENAI_MODEL`: 생략 시 `gpt-5.4-mini`
+- `SMTP_HOST`: 생략 시 `smtp.gmail.com`
+- `SMTP_PORT`: 생략 시 `587`
 - `SMTP_FROM`
-- `SMTP_USE_TLS`
-- `SMTP_USE_SSL`
+- `SMTP_USE_TLS`: 생략 시 `true`
+- `SMTP_USE_SSL`: 생략 시 `false`
 
 Gmail SMTP 예시:
 

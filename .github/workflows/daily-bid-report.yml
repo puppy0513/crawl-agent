@@ -23,19 +23,47 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Validate required secrets
+        env:
+          G2B_SERVICE_KEY: ${{ secrets.G2B_SERVICE_KEY }}
+          CHATGPT_API_KEY: ${{ secrets.CHATGPT_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          missing=0
+
+          require_secret() {
+            if [ -z "${!1}" ]; then
+              echo "::error title=Missing GitHub Actions secret::$1 is not configured."
+              missing=1
+            fi
+          }
+
+          require_secret G2B_SERVICE_KEY
+          require_secret SMTP_USERNAME
+          require_secret SMTP_PASSWORD
+
+          if [ -z "$CHATGPT_API_KEY" ] && [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error title=Missing GitHub Actions secret::Set CHATGPT_API_KEY or OPENAI_API_KEY."
+            missing=1
+          fi
+
+          exit "$missing"
+
       - name: Generate and email bid report
         env:
           G2B_SERVICE_KEY: ${{ secrets.G2B_SERVICE_KEY }}
           CHATGPT_API_KEY: ${{ secrets.CHATGPT_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-5.4-mini' }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST || 'smtp.gmail.com' }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SMTP_FROM: ${{ secrets.SMTP_FROM }}
-          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
-          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM || secrets.SMTP_USERNAME }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS || 'true' }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL || 'false' }}
         run: python fetch_yesterday_all.py --send-email
 
       - name: Upload generated report
