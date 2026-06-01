@@ -20,6 +20,7 @@ KST = ZoneInfo("Asia/Seoul")
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 DEFAULT_EMAIL_TO = "bjh@openeg.co.kr"
+DOTENV_OVERRIDE_KEYS = {"OPENAI_MODEL"}
 
 
 def today_kst() -> str:
@@ -42,7 +43,7 @@ def load_env(path: str = ".env") -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip("\"'")
-        if key and not os.environ.get(key):
+        if key and (key in DOTENV_OVERRIDE_KEYS or not os.environ.get(key)):
             os.environ[key] = value
 
 
