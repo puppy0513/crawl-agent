@@ -172,16 +172,16 @@ python fetch_yesterday_all.py --send-email --email-to bjh@openeg.co.kr --email-t
 
 공고가 1건 이상이면 ChatGPT API 분석을 호출하고, 공고가 0건이면 API 호출 없이 “해당 공고 없음” 보고서를 발송합니다.
 
-GitHub 저장소의 `Settings > Secrets and variables > Actions`에 아래 값을 등록해야 합니다.
+GitHub 저장소의 `Settings > Secrets and variables > Actions`에 `SECRET`이라는 이름으로 `.env`와 같은 형식의 값을 등록합니다.
 
-필수 Secret:
+`SECRET` 안에 들어가야 하는 필수 값:
 
 - `G2B_SERVICE_KEY`
 - `CHATGPT_API_KEY` 또는 `OPENAI_API_KEY`
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
 
-선택 Secret:
+`SECRET` 안에 들어갈 수 있는 선택 값:
 
 - `OPENAI_MODEL`: 생략 시 `gpt-5.4-mini`
 - `SMTP_HOST`: 생략 시 `smtp.gmail.com`
@@ -201,5 +201,7 @@ SMTP_FROM=bjh.openeg@gmail.com
 SMTP_USE_TLS=true
 SMTP_USE_SSL=false
 ```
+
+각 값을 개별 GitHub Actions Secret으로 등록해도 동작하지만, 이 워크플로우는 `SECRET` 하나에 위 내용을 모아 넣는 방식을 우선 지원합니다.
 
 수동으로 즉시 실행하려면 GitHub 저장소의 `Actions > Daily Bid Report > Run workflow`를 누릅니다.

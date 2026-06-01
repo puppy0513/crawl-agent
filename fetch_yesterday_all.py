@@ -38,7 +38,7 @@ def load_env(path: str = ".env") -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip("\"'")
-        if key and key not in os.environ:
+        if key and not os.environ.get(key):
             os.environ[key] = value
 
 

@@ -23,6 +23,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore dotenv from SECRET
+        env:
+          DOTENV_SECRET: ${{ secrets.SECRET }}
+        run: |
+          if [ -n "$DOTENV_SECRET" ]; then
+            printf '%s\n' "$DOTENV_SECRET" > .env
+            chmod 600 .env
+          fi
+
       - name: Validate required secrets
         env:
           G2B_SERVICE_KEY: ${{ secrets.G2B_SERVICE_KEY }}
@@ -31,25 +40,45 @@ jobs:
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: |
-          missing=0
+          python - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
 
-          require_secret() {
-            if [ -z "${!1}" ]; then
-              echo "::error title=Missing GitHub Actions secret::$1 is not configured."
-              missing=1
-            fi
-          }
+          def read_dotenv(path: str = ".env") -> dict[str, str]:
+              env_path = Path(path)
+              if not env_path.exists():
+                  return {}
+              values = {}
+              for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                  line = raw_line.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  key, value = line.split("=", 1)
+                  key = key.strip()
+                  value = value.strip().strip("\"'")
+                  if key:
+                      values[key] = value
+              return values
 
-          require_secret G2B_SERVICE_KEY
-          require_secret SMTP_USERNAME
-          require_secret SMTP_PASSWORD
+          dotenv = read_dotenv()
 
-          if [ -z "$CHATGPT_API_KEY" ] && [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error title=Missing GitHub Actions secret::Set CHATGPT_API_KEY or OPENAI_API_KEY."
-            missing=1
-          fi
+          def value(name: str) -> str:
+              return (os.environ.get(name) or dotenv.get(name) or "").strip()
 
-          exit "$missing"
+          missing = []
+          for name in ("G2B_SERVICE_KEY", "SMTP_USERNAME", "SMTP_PASSWORD"):
+              if not value(name):
+                  missing.append(name)
+
+          if not value("CHATGPT_API_KEY") and not value("OPENAI_API_KEY"):
+              missing.append("CHATGPT_API_KEY or OPENAI_API_KEY")
+
+          for name in missing:
+              print(f"::error title=Missing GitHub Actions secret::{name} is not configured.")
+
+          sys.exit(1 if missing else 0)
+          PY
 
       - name: Generate and email bid report
         env:
