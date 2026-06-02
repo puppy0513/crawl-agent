@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import html as html_lib
 import mimetypes
 import json
 import os
+import re
 import smtplib
 from datetime import date, datetime
 from email.message import EmailMessage
@@ -205,18 +207,97 @@ def build_analysis_prompt(result: dict, *, report_date: str) -> str:
 
 보고서 필수 구성:
 1. 제목: "{report_date} 발주공고 분석 보고서"
-2. 전체 요약: 총 공고 수, 즉시 검토/적극 검토/조건부/후순위/제외 권장 개수
-3. 우선 검토 공고 Top 5: 공고명, 기관, 추천등급, 점수, 핵심 사유, 추가 확인사항
-4. 전체 공고 평가표: 공고명, 기관, 분야 매칭, 점수, 등급, 추천, 주요 리스크
-5. 공고별 상세 분석: D등급 공고는 제외하고, C등급 이상 공고만 긍정 신호, 부정 신호, 수주 가능성, 수행 리스크, 담당자 확인사항을 작성
-6. 공고별 점수 산정 요약: D등급 공고는 제외하고, C등급 이상 공고만 작성
-7. 최종 액션 아이템
+2. "## 1) 전체 요약": 총 공고 수, 즉시 검토/적극 검토/조건부/후순위/제외 권장 개수와 "### 요약 판단" bullet 3개
+3. "## 2) 우선 검토 공고 Top 5": 예시와 같은 Markdown 표 형식으로 최대 5개 작성
+4. "## 4) 공고별 상세 분석": D등급 공고는 제외하고, C등급 이상 공고만 작성. 각 공고는 예시처럼 기관/분야 매칭/점수/등급/추천, 긍정 신호, 부정 신호, 수주 가능성, 수행 리스크, 담당자 확인사항, 점수 산정 요약을 작성
+5. "## 6) 최종 액션 아이템": 예시처럼 번호 목록으로 작성
 
 작성 제한:
-- D등급 또는 제외 권장 공고는 "공고별 상세 분석" 섹션에 작성하지 마세요.
-- D등급 또는 제외 권장 공고는 "공고별 점수 산정 요약" 섹션에 작성하지 마세요.
-- D등급 공고는 "전체 공고 평가표"에는 포함하되, 상세 설명은 주요 리스크 한 줄로 충분합니다.
-- 모든 공고가 D등급이면 상세 분석과 점수 산정 요약 섹션에는 "C등급 이상 공고가 없어 생략합니다."라고만 작성하세요.
+- "전체 공고 평가표" 섹션은 작성하지 마세요.
+- "공고별 점수 산정 요약" 섹션은 작성하지 마세요.
+- 별도의 "## 3)" 또는 "## 5)" 섹션을 만들지 마세요.
+- "## 2) 우선 검토 공고 Top 5" 표에는 전체 공고 중 우선순위 상위 5개를 작성하세요. D등급도 순위 설명을 위해 포함할 수 있습니다.
+- D등급 또는 제외 권장 공고는 "## 4) 공고별 상세 분석"에는 작성하지 마세요.
+- D등급 공고는 전체 요약에서 "제외 N건"으로만 집계하고 개별 설명하지 마세요.
+- 모든 공고가 D등급이면 "## 4) 공고별 상세 분석"에는 "C등급 이상 공고가 없어 생략합니다."라고만 작성하세요.
+- 보고서 구조와 표현은 아래 예시 형식을 반드시 따르세요.
+
+형식 예시:
+
+# {report_date} 발주공고 분석 보고서
+
+## 1) 전체 요약
+
+- 총 공고 수: N건
+- 즉시 검토: N건
+- 적극 검토: N건
+- 조건부 검토: N건
+- 후순위: N건
+- 제외 권장: N건
+
+### 요약 판단
+
+- 핵심 판단 1
+- 핵심 판단 2
+- 핵심 판단 3
+
+---
+
+## 2) 우선 검토 공고 Top 5
+
+> 기준: 오픈이지 적합도, 수행 가능성, 전략 가치, 리스크를 종합해 선정
+> 단, 데이터 구축·개방·AI/SW 개발 중심 공고는 상위 추천에서 강하게 제한
+
+|순위|공고명|기관|추천등급|점수|핵심 사유|추가 확인사항|
+|---|---|---|---|---|---|---|
+|1|공고명|기관|A|75|핵심 사유|추가 확인사항|
+
+---
+
+## 4) 공고별 상세 분석
+
+### 1) 공고명
+
+- 기관: 기관명
+- 분야 매칭: 분야
+- 점수: 75
+- 등급: A
+- 추천: 적극 검토
+
+**긍정 신호**
+
+- 내용
+
+**부정 신호**
+
+- 내용
+
+**수주 가능성**
+
+- 내용
+
+**수행 리스크**
+
+- 내용
+
+**담당자 확인사항**
+
+- 내용
+
+**점수 산정 요약**
+
+- 사업 적합도 24/30: 내용
+- 매출 가능성 16/20: 내용
+- 수주 가능성 15/20: 내용
+- 전략적 가치 10/15: 내용
+- 수행 리스크 10/15: 내용
+
+---
+
+## 6) 최종 액션 아이템
+
+1. **액션 제목**
+    - 내용
 
 ---
 
@@ -278,6 +359,70 @@ def call_openai_for_markdown(prompt: str, *, model: str) -> str:
     return extract_response_text(response.json()).strip() + "\n"
 
 
+def is_allowed_detail_block(block: str) -> bool:
+    return not re.search(
+        r"(?mi)^-\s*등급:\s*D\b|^-\s*추천:\s*(제외|제외 권장)\b",
+        block,
+    )
+
+
+def sanitize_detail_section(section: str) -> str:
+    matches = list(re.finditer(r"(?m)^###\s+\d+\)\s+", section))
+    if not matches:
+        return section
+
+    header = section[: matches[0].start()].rstrip()
+    blocks: list[str] = []
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(section)
+        blocks.append(section[start:end].strip())
+
+    allowed_blocks: list[str] = []
+    for block in blocks:
+        if not is_allowed_detail_block(block):
+            continue
+        next_number = len(allowed_blocks) + 1
+        renumbered = re.sub(r"(?m)^###\s+\d+\)", f"### {next_number})", block, count=1)
+        allowed_blocks.append(renumbered)
+
+    if not allowed_blocks:
+        return f"{header}\n\nC등급 이상 공고가 없어 생략합니다.\n\n---\n"
+
+    return header + "\n\n" + "\n\n".join(allowed_blocks).rstrip() + "\n"
+
+
+def sanitize_report_markdown(markdown: str) -> str:
+    section_matches = list(re.finditer(r"(?m)^##\s+\d+\)\s+", markdown))
+    if not section_matches:
+        return markdown.strip() + "\n"
+
+    prefix = markdown[: section_matches[0].start()]
+    sanitized_sections: list[str] = []
+
+    for index, match in enumerate(section_matches):
+        start = match.start()
+        end = (
+            section_matches[index + 1].start()
+            if index + 1 < len(section_matches)
+            else len(markdown)
+        )
+        section = markdown[start:end].strip()
+        section_number = re.match(r"##\s+(\d+)\)", section)
+        if not section_number:
+            sanitized_sections.append(section)
+            continue
+
+        number = section_number.group(1)
+        if number in {"3", "5"}:
+            continue
+        if number == "4":
+            section = sanitize_detail_section(section).strip()
+        sanitized_sections.append(section)
+
+    return prefix.rstrip() + "\n\n" + "\n\n".join(sanitized_sections).rstrip() + "\n"
+
+
 def env_bool(name: str, *, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -310,6 +455,7 @@ def send_email_report(
     to_addrs: list[str],
     subject: str,
     body: str,
+    html_body: str | None = None,
     attachments: list[Path],
 ) -> None:
     host = require_env("SMTP_HOST")
@@ -325,6 +471,8 @@ def send_email_report(
     message["To"] = ", ".join(to_addrs)
     message["Subject"] = subject
     message.set_content(body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
 
     for attachment in attachments:
         add_attachment(message, attachment)
@@ -344,6 +492,126 @@ def send_email_report(
         if username and password:
             smtp.login(username, password)
         smtp.send_message(message)
+
+
+def inline_markdown_to_html(text: str) -> str:
+    escaped = html_lib.escape(text)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"`(.+?)`", r"<code>\1</code>", escaped)
+    return escaped
+
+
+def is_markdown_table(lines: list[str], index: int) -> bool:
+    return (
+        index + 1 < len(lines)
+        and lines[index].strip().startswith("|")
+        and lines[index].strip().endswith("|")
+        and set(lines[index + 1].replace("|", "").replace(":", "").strip()) <= {"-"}
+    )
+
+
+def split_markdown_table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def markdown_table_to_html(lines: list[str]) -> str:
+    headers = split_markdown_table_row(lines[0])
+    rows = [split_markdown_table_row(line) for line in lines[2:]]
+    html = [
+        '<table style="border-collapse:collapse;width:100%;margin:12px 0;">',
+        "<thead><tr>",
+    ]
+    for header in headers:
+        html.append(
+            '<th style="border:1px solid #ddd;padding:8px;background:#f6f8fa;text-align:left;">'
+            f"{inline_markdown_to_html(header)}</th>"
+        )
+    html.append("</tr></thead><tbody>")
+    for row in rows:
+        html.append("<tr>")
+        for cell in row:
+            html.append(
+                '<td style="border:1px solid #ddd;padding:8px;vertical-align:top;">'
+                f"{inline_markdown_to_html(cell)}</td>"
+            )
+        html.append("</tr>")
+    html.append("</tbody></table>")
+    return "".join(html)
+
+
+def markdown_to_email_html(markdown: str) -> str:
+    lines = markdown.splitlines()
+    html: list[str] = [
+        '<html><body style="font-family:Arial, Helvetica, sans-serif;line-height:1.55;color:#222;">'
+    ]
+    in_list = False
+    i = 0
+    while i < len(lines):
+        raw_line = lines[i]
+        line = raw_line.strip()
+
+        if is_markdown_table(lines, i):
+            if in_list:
+                html.append("</ul>")
+                in_list = False
+            table_lines = [lines[i], lines[i + 1]]
+            i += 2
+            while i < len(lines) and lines[i].strip().startswith("|") and lines[i].strip().endswith("|"):
+                table_lines.append(lines[i])
+                i += 1
+            html.append(markdown_table_to_html(table_lines))
+            continue
+
+        if not line:
+            if in_list:
+                html.append("</ul>")
+                in_list = False
+            i += 1
+            continue
+
+        if line.startswith("#"):
+            if in_list:
+                html.append("</ul>")
+                in_list = False
+            level = min(len(line) - len(line.lstrip("#")), 3)
+            text = line[level:].strip()
+            tag = f"h{level}"
+            html.append(f"<{tag}>{inline_markdown_to_html(text)}</{tag}>")
+        elif line.startswith("- "):
+            if not in_list:
+                html.append("<ul>")
+                in_list = True
+            html.append(f"<li>{inline_markdown_to_html(line[2:].strip())}</li>")
+        elif re.match(r"^\d+\.\s+", line):
+            if not in_list:
+                html.append("<ul>")
+                in_list = True
+            list_text = re.sub(r"^\d+\.\s+", "", line)
+            html.append(f"<li>{inline_markdown_to_html(list_text)}</li>")
+        elif line.startswith(">"):
+            if in_list:
+                html.append("</ul>")
+                in_list = False
+            html.append(
+                '<blockquote style="border-left:4px solid #ddd;margin:12px 0;padding-left:12px;color:#555;">'
+                f"{inline_markdown_to_html(line.lstrip('>').strip())}</blockquote>"
+            )
+        elif line == "---":
+            if in_list:
+                html.append("</ul>")
+                in_list = False
+            html.append("<hr>")
+        else:
+            if in_list:
+                html.append("</ul>")
+                in_list = False
+            html.append(f"<p>{inline_markdown_to_html(line)}</p>")
+        i += 1
+
+    if in_list:
+        html.append("</ul>")
+    html.append("</body></html>")
+    return "".join(html)
 
 
 def build_email_body(
@@ -366,6 +634,43 @@ def build_email_body(
     if not include_report:
         return intro + summary
     return intro + summary + "\n---\n\n" + markdown
+
+
+def build_email_html_body(
+    *,
+    report_date: str,
+    result: dict,
+    markdown: str,
+    include_report: bool,
+) -> str:
+    notice_count = total_notice_count(result)
+    intro = (
+        f"<p>{html_lib.escape(report_date)} 발주공고가 없습니다.</p>"
+        if notice_count == 0
+        else (
+            f"<p>{html_lib.escape(report_date)} 발주공고 분석 보고서를 아래에 포함하고, "
+            "Markdown 파일로도 첨부합니다.</p>"
+        )
+    )
+    summary = (
+        "<ul>"
+        f"<li>나라장터 일반용역: {int(result['g2b']['count'])}건</li>"
+        f"<li>{html_lib.escape(MOEL_REPORT_LABEL)}: {int(result['moel']['count'])}건</li>"
+        "</ul>"
+    )
+    if not include_report:
+        return (
+            '<html><body style="font-family:Arial, Helvetica, sans-serif;line-height:1.55;color:#222;">'
+            f"{intro}{summary}</body></html>"
+        )
+    return (
+        '<html><body style="font-family:Arial, Helvetica, sans-serif;line-height:1.55;color:#222;">'
+        f"{intro}{summary}<hr>"
+        + markdown_to_email_html(markdown).removeprefix(
+            '<html><body style="font-family:Arial, Helvetica, sans-serif;line-height:1.55;color:#222;">'
+        ).removesuffix("</body></html>")
+        + "</body></html>"
+    )
 
 
 def crawl_yesterday_notices(target_date: date | None = None) -> dict:
@@ -445,6 +750,7 @@ def main() -> int:
         model = args.model or os.getenv("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
         prompt = build_analysis_prompt(out, report_date=report_date)
         markdown = call_openai_for_markdown(prompt, model=model)
+    markdown = sanitize_report_markdown(markdown)
     markdown_path.write_text(markdown, encoding="utf-8")
 
     if args.pretty:
@@ -466,6 +772,12 @@ def main() -> int:
             to_addrs=to_addrs,
             subject=subject,
             body=build_email_body(
+                report_date=report_date,
+                result=out,
+                markdown=markdown,
+                include_report=notice_count > 0,
+            ),
+            html_body=build_email_html_body(
                 report_date=report_date,
                 result=out,
                 markdown=markdown,
