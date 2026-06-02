@@ -33,6 +33,7 @@ OUTPUT_FIELDS = [
     "prearngPrceDcsnMthdNm",
     "cmmnSpldmdMethdNm",
     "indstrytyLmtYn",
+    "detailUrl",
 ]
 
 
@@ -57,7 +58,15 @@ def normalize_org(s: str) -> str:
 
 
 def select_output_fields(item: dict) -> dict:
-    return {field: item.get(field, "") for field in OUTPUT_FIELDS}
+    selected = {field: item.get(field, "") for field in OUTPUT_FIELDS}
+    bid_no = (item.get("bidNtceNo") or "").strip()
+    bid_ord = str(item.get("bidNtceOrd") or "00").strip() or "00"
+    if bid_no:
+        selected["detailUrl"] = (
+            "https://www.g2b.go.kr:8101/ep/invitation/publish/bidInfoDtl.do"
+            f"?bidno={bid_no}&bidseq={bid_ord}&releaseYn=Y&taskClCd=5"
+        )
+    return selected
 
 
 def fetch_yesterday_bids(

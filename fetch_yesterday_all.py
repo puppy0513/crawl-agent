@@ -21,7 +21,12 @@ from moel.fetch_yesterday import fetch_yesterday_notices
 KST = ZoneInfo("Asia/Seoul")
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
-DEFAULT_EMAIL_TO = "bjh@openeg.co.kr"
+DEFAULT_EMAIL_TO = [
+    "bjh@openeg.co.kr",
+    "yskim@openeg.co.kr",
+    "jwj@openeg.co.kr",
+    "hs.cho@openeg.co.kr",
+]
 DOTENV_OVERRIDE_KEYS = {"OPENAI_MODEL"}
 MOEL_REPORT_LABEL = "고용노동부 발주공지(직업능력정책과,인적자원개발과)"
 
@@ -159,21 +164,59 @@ def render_moel_section(lines: list[str], moel_result: dict) -> None:
             ]
             for item in items
         ],
-    )
+        )
+
+
+def render_compact_markdown_report(result: dict, *, report_date: str) -> str:
+    notices: list[dict] = []
+    notices.extend(result.get("g2b", {}).get("items") or [])
+    notices.extend(result.get("moel", {}).get("items") or [])
+
+    lines = [
+        f"# {report_date} 발주공고 분석 보고서",
+        "",
+        "## 1) 전체요약",
+        "",
+        f"- 총 공고 수: {total_notice_count(result)}건",
+        "- 즉시 검토: 0건",
+        "- 적극 검토: 0건",
+        "- 조건부 검토: 0건",
+        "- 후순위: 0건",
+        f"- 제외 권장: {total_notice_count(result)}건",
+        "",
+        "## 2) 우선 검토 공고 Top5",
+        "",
+        "> 기준: 오픈이지 적합도, 수행 가능성, 전략 가치, 리스크를 종합해 선정",
+        "> 단, 데이터 구축·개방·AI/SW 개발 중심 공고는 상위 추천에서 강하게 제한",
+        "",
+        "|순위|공고명|기관|추천등급|점수|핵심 사유|URL|",
+        "|---|---|---|---|---|---|---|",
+    ]
+
+    top_rows = []
+    for index, item in enumerate(notices[:5], start=1):
+        title = (
+            item.get("bidNtceNm")
+            or item.get("title")
+            or item.get("name")
+            or f"공고 {index}"
+        )
+        org = item.get("dminsttNm") or item.get("department") or "-"
+        url = item.get("detailUrl") or "-"
+        top_rows.append(
+            f"|{index}|{markdown_escape(title)}|{markdown_escape(org)}|-|-|원문 분석 없음|{markdown_escape(url)}|"
+        )
+
+    if top_rows:
+        lines.extend(top_rows)
+    else:
+        lines.append("|-|-|-|-|-|공고 없음|-|")
+
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def render_markdown_report(result: dict, *, report_date: str) -> str:
-    lines = [
-        f"# {report_date} 발주공고 목록",
-        "",
-        f"- 생성일: {report_date}",
-        f"- 나라장터 일반용역: {result['g2b']['count']}건",
-        f"- {MOEL_REPORT_LABEL}: {result['moel']['count']}건",
-        "",
-    ]
-    render_g2b_section(lines, result["g2b"])
-    render_moel_section(lines, result["moel"])
-    return "\n".join(lines).rstrip() + "\n"
+    return render_compact_markdown_report(result, report_date=report_date)
 
 
 def read_instruction_file(path: str) -> str:
@@ -207,26 +250,23 @@ def build_analysis_prompt(result: dict, *, report_date: str) -> str:
 
 보고서 필수 구성:
 1. 제목: "{report_date} 발주공고 분석 보고서"
-2. "## 1) 전체 요약": 총 공고 수, 즉시 검토/적극 검토/조건부/후순위/제외 권장 개수와 "### 요약 판단" bullet 3개
-3. "## 2) 우선 검토 공고 Top 5": 예시와 같은 Markdown 표 형식으로 최대 5개 작성
-4. "## 4) 공고별 상세 분석": D등급 공고는 제외하고, C등급 이상 공고만 작성. 각 공고는 예시처럼 기관/분야 매칭/점수/등급/추천, 긍정 신호, 부정 신호, 수주 가능성, 수행 리스크, 담당자 확인사항, 점수 산정 요약을 작성
-5. "## 6) 최종 액션 아이템": 예시처럼 번호 목록으로 작성
+2. "## 1) 전체요약": 총 공고 수, 즉시 검토/적극 검토/조건부/후순위/제외 권장 개수
+3. "## 2) 우선 검토 공고 Top5": 예시와 같은 Markdown 표 형식으로 최대 5개 작성
 
 작성 제한:
 - "전체 공고 평가표" 섹션은 작성하지 마세요.
 - "공고별 점수 산정 요약" 섹션은 작성하지 마세요.
-- 별도의 "## 3)" 또는 "## 5)" 섹션을 만들지 마세요.
-- "## 2) 우선 검토 공고 Top 5" 표에는 전체 공고 중 우선순위 상위 5개를 작성하세요. D등급도 순위 설명을 위해 포함할 수 있습니다.
-- D등급 또는 제외 권장 공고는 "## 4) 공고별 상세 분석"에는 작성하지 마세요.
-- D등급 공고는 전체 요약에서 "제외 N건"으로만 집계하고 개별 설명하지 마세요.
-- 모든 공고가 D등급이면 "## 4) 공고별 상세 분석"에는 "C등급 이상 공고가 없어 생략합니다."라고만 작성하세요.
+- "2) 우선 검토 공고 Top5" 아래에는 그 어떤 추가 섹션도 작성하지 마세요.
+- "## 2) 우선 검토 공고 Top 5" 표에는 C등급 이하 공고를 넣지 마세요.
+- "## 2) 우선 검토 공고 Top 5" 표의 마지막 열은 "URL"로 작성하세요.
+- "### 요약 판단", "공고별 평가 메모", "최종 액션 아이템" 같은 추가 본문은 작성하지 마세요.
 - 보고서 구조와 표현은 아래 예시 형식을 반드시 따르세요.
 
 형식 예시:
 
 # {report_date} 발주공고 분석 보고서
 
-## 1) 전체 요약
+## 1) 전체요약
 
 - 총 공고 수: N건
 - 즉시 검토: N건
@@ -243,61 +283,14 @@ def build_analysis_prompt(result: dict, *, report_date: str) -> str:
 
 ---
 
-## 2) 우선 검토 공고 Top 5
+## 2) 우선 검토 공고 Top5
 
 > 기준: 오픈이지 적합도, 수행 가능성, 전략 가치, 리스크를 종합해 선정
 > 단, 데이터 구축·개방·AI/SW 개발 중심 공고는 상위 추천에서 강하게 제한
 
-|순위|공고명|기관|추천등급|점수|핵심 사유|추가 확인사항|
+|순위|공고명|기관|추천등급|점수|핵심 사유|URL|
 |---|---|---|---|---|---|---|
-|1|공고명|기관|A|75|핵심 사유|추가 확인사항|
-
----
-
-## 4) 공고별 상세 분석
-
-### 1) 공고명
-
-- 기관: 기관명
-- 분야 매칭: 분야
-- 점수: 75
-- 등급: A
-- 추천: 적극 검토
-
-**긍정 신호**
-
-- 내용
-
-**부정 신호**
-
-- 내용
-
-**수주 가능성**
-
-- 내용
-
-**수행 리스크**
-
-- 내용
-
-**담당자 확인사항**
-
-- 내용
-
-**점수 산정 요약**
-
-- 사업 적합도 24/30: 내용
-- 매출 가능성 16/20: 내용
-- 수주 가능성 15/20: 내용
-- 전략적 가치 10/15: 내용
-- 수행 리스크 10/15: 내용
-
----
-
-## 6) 최종 액션 아이템
-
-1. **액션 제목**
-    - 내용
+|1|공고명|기관|A|75|핵심 사유|https://example.com|
 
 ---
 
@@ -359,68 +352,117 @@ def call_openai_for_markdown(prompt: str, *, model: str) -> str:
     return extract_response_text(response.json()).strip() + "\n"
 
 
-def is_allowed_detail_block(block: str) -> bool:
-    return not re.search(
-        r"(?mi)^-\s*등급:\s*D\b|^-\s*추천:\s*(제외|제외 권장)\b",
-        block,
-    )
+def parse_markdown_table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
 
-def sanitize_detail_section(section: str) -> str:
-    matches = list(re.finditer(r"(?m)^###\s+\d+\)\s+", section))
-    if not matches:
+def allow_top_grade(grade: str) -> bool:
+    head = (grade or "").strip().upper()[:1]
+    return head in {"S", "A", "B"}
+
+
+def build_notice_url_index(result: dict) -> dict[str, str]:
+    index: dict[str, str] = {}
+    for item in result.get("g2b", {}).get("items") or []:
+        title = str(item.get("bidNtceNm") or "").strip()
+        url = str(item.get("detailUrl") or "").strip()
+        if title and url:
+            index[title] = url
+    for item in result.get("moel", {}).get("items") or []:
+        title = str(item.get("title") or "").strip()
+        url = str(item.get("detailUrl") or "").strip()
+        if title and url:
+            index[title] = url
+    return index
+
+
+def sanitize_top5_section(section: str, result: dict) -> str:
+    lines = section.splitlines()
+    table_header_idx = -1
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("|") and "공고명" in line and "추천등급" in line:
+            table_header_idx = idx
+            break
+    if table_header_idx == -1 or table_header_idx + 1 >= len(lines):
         return section
 
-    header = section[: matches[0].start()].rstrip()
-    blocks: list[str] = []
-    for index, match in enumerate(matches):
-        start = match.start()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(section)
-        blocks.append(section[start:end].strip())
+    row_idx = table_header_idx + 2
+    rows: list[list[str]] = []
+    while row_idx < len(lines):
+        line = lines[row_idx].strip()
+        if not (line.startswith("|") and line.endswith("|")):
+            break
+        cols = parse_markdown_table_row(line)
+        if len(cols) >= 6 and allow_top_grade(cols[3]):
+            rows.append(cols)
+        row_idx += 1
 
-    allowed_blocks: list[str] = []
-    for block in blocks:
-        if not is_allowed_detail_block(block):
-            continue
-        next_number = len(allowed_blocks) + 1
-        renumbered = re.sub(r"(?m)^###\s+\d+\)", f"### {next_number})", block, count=1)
-        allowed_blocks.append(renumbered)
-
-    if not allowed_blocks:
-        return f"{header}\n\nC등급 이상 공고가 없어 생략합니다.\n\n---\n"
-
-    return header + "\n\n" + "\n\n".join(allowed_blocks).rstrip() + "\n"
-
-
-def sanitize_report_markdown(markdown: str) -> str:
-    section_matches = list(re.finditer(r"(?m)^##\s+\d+\)\s+", markdown))
-    if not section_matches:
-        return markdown.strip() + "\n"
-
-    prefix = markdown[: section_matches[0].start()]
-    sanitized_sections: list[str] = []
-
-    for index, match in enumerate(section_matches):
-        start = match.start()
-        end = (
-            section_matches[index + 1].start()
-            if index + 1 < len(section_matches)
-            else len(markdown)
+    url_index = build_notice_url_index(result)
+    rebuilt_rows: list[str] = []
+    for idx, cols in enumerate(rows[:5], start=1):
+        title = cols[1]
+        url = url_index.get(title, "-")
+        rebuilt_rows.append(
+            f"|{idx}|{title}|{cols[2]}|{cols[3]}|{cols[4]}|{cols[5]}|{url}|"
         )
-        section = markdown[start:end].strip()
-        section_number = re.match(r"##\s+(\d+)\)", section)
-        if not section_number:
-            sanitized_sections.append(section)
-            continue
 
-        number = section_number.group(1)
-        if number in {"3", "5"}:
-            continue
-        if number == "4":
-            section = sanitize_detail_section(section).strip()
-        sanitized_sections.append(section)
+    rebuilt_table = [
+        "|순위|공고명|기관|추천등급|점수|핵심 사유|URL|",
+        "|---|---|---|---|---|---|---|",
+    ]
+    if rebuilt_rows:
+        rebuilt_table.extend(rebuilt_rows)
+    else:
+        rebuilt_table.append("|-|-|-|-|-|C등급 이하만 존재하여 추천 공고 없음|-|")
 
-    return prefix.rstrip() + "\n\n" + "\n\n".join(sanitized_sections).rstrip() + "\n"
+    return "\n".join(lines[:table_header_idx] + rebuilt_table)
+
+
+def sanitize_report_markdown(markdown: str, result: dict) -> str:
+    lines = markdown.splitlines()
+    title_line = lines[0].strip() if lines and lines[0].strip().startswith("# ") else ""
+    title_date_match = re.match(r"^#\s+(\d{4}-\d{2}-\d{2})\s+발주공고 분석 보고서$", title_line)
+    report_date = title_date_match.group(1) if title_date_match else today_kst()
+
+    section1_idx = next(
+        (
+            idx
+            for idx, line in enumerate(lines)
+            if re.match(r"^##\s+1\)\s+전체\s*요약\b", line.strip())
+        ),
+        -1,
+    )
+    section2_idx = next(
+        (
+            idx
+            for idx, line in enumerate(lines)
+            if re.match(r"^##\s+2\)\s+우선\s*검토\s*공고\s*Top\s*5\b", line.strip())
+        ),
+        -1,
+    )
+
+    if section1_idx == -1 or section2_idx == -1 or section2_idx <= section1_idx:
+        return render_compact_markdown_report(result, report_date=report_date)
+
+    section1_end = section2_idx
+    section2_end = len(lines)
+    seen_table = False
+    for idx in range(section2_idx + 1, len(lines)):
+        line = lines[idx].strip()
+        if not line:
+            continue
+        if line.startswith("|"):
+            seen_table = True
+            continue
+        if line.startswith(">") and not seen_table:
+            continue
+        section2_end = idx
+        break
+
+    section1 = "\n".join(lines[:section1_end]).rstrip()
+    section2 = sanitize_top5_section("\n".join(lines[section2_idx:section2_end]).rstrip(), result).rstrip()
+
+    return section1 + "\n\n" + section2 + "\n"
 
 
 def env_bool(name: str, *, default: bool) -> bool:
@@ -694,6 +736,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="전일(KST) 나라장터/고용노동부 공고를 한 번에 조회"
     )
+    default_email_text = ", ".join(DEFAULT_EMAIL_TO)
     parser.add_argument(
         "--pretty",
         action="store_true",
@@ -722,13 +765,13 @@ def main() -> int:
     parser.add_argument(
         "--send-email",
         action="store_true",
-        help=f"생성된 Markdown 보고서를 이메일로 발송. 기본 수신자: {DEFAULT_EMAIL_TO}",
+        help=f"생성된 Markdown 보고서를 이메일로 발송. 기본 수신자: {default_email_text}",
     )
     parser.add_argument(
         "--email-to",
         action="append",
         default=None,
-        help=f"메일 수신자. 여러 번 지정 가능. 기본값: {DEFAULT_EMAIL_TO}",
+        help=f"메일 수신자. 여러 번 지정 가능. 기본값: {default_email_text}",
     )
     args = parser.parse_args()
 
@@ -750,7 +793,7 @@ def main() -> int:
         model = args.model or os.getenv("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
         prompt = build_analysis_prompt(out, report_date=report_date)
         markdown = call_openai_for_markdown(prompt, model=model)
-    markdown = sanitize_report_markdown(markdown)
+    markdown = sanitize_report_markdown(markdown, out)
     markdown_path.write_text(markdown, encoding="utf-8")
 
     if args.pretty:
@@ -760,7 +803,7 @@ def main() -> int:
         print(f"Markdown report written: {markdown_path}")
 
     if args.send_email:
-        to_addrs = args.email_to or [DEFAULT_EMAIL_TO]
+        to_addrs = args.email_to or DEFAULT_EMAIL_TO
         notice_count = total_notice_count(out)
         subject = f"{report_date} 발주공고 목록"
         attachments = [markdown_path]
