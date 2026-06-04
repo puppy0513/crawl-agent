@@ -3,7 +3,7 @@ name: Daily Bid Report
 on:
   schedule:
     # 08:00 Asia/Seoul = 23:00 UTC on the previous day.
-    - cron: "0 23 * * *"
+    - cron: "12 0 * * *"
   workflow_dispatch:
 
 jobs:
