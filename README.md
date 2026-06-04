@@ -160,11 +160,12 @@ python fetch_yesterday_all.py --send-email --email-to bjh@openeg.co.kr --email-t
 
 ## GitHub Actions 자동화
 
-내 컴퓨터가 꺼져 있어도 매일 한국시간 오전 8시에 GitHub Actions에서 크롤링과 메일 발송을 실행할 수 있습니다.
+GitHub Actions는 외부 트리거를 받아 크롤링과 메일 발송을 실행합니다.  
+이 저장소는 GitHub 내부 `schedule` 대신 `repository_dispatch` 또는 수동 실행을 받도록 설정되어 있습니다.
 
 이 저장소에는 `.github/workflows/daily-bid-report.yml` 워크플로우가 포함되어 있습니다.
 
-- 실행 시간: 매일 08:00 KST
+- 실행 방식: `cron-job.org` 같은 외부 스케줄러가 GitHub API로 `repository_dispatch` 호출
 - 실행 환경: GitHub-hosted Ubuntu runner
 - 실행 명령: `python fetch_yesterday_all.py --send-email`
 - 메일 본문: 공고가 1건 이상이면 발주공고 분석 보고서 Markdown 내용을 본문에도 포함
@@ -172,6 +173,19 @@ python fetch_yesterday_all.py --send-email --email-to bjh@openeg.co.kr --email-t
 - 결과 보관: GitHub Actions artifact에 `.md`, `.json` 업로드
 
 공고가 1건 이상이면 ChatGPT API 분석을 호출하고, 공고가 0건이면 API 호출 없이 “해당 공고 없음” 보고서를 발송합니다.
+
+`cron-job.org`에서 GitHub API를 호출하는 예시는 아래와 같습니다.
+
+```bash
+curl -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer <YOUR_GITHUB_TOKEN>" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  https://api.github.com/repos/puppy0513/crawl-agent/dispatches \
+  -d '{"event_type":"daily-bid-report"}'
+```
+
+`<YOUR_GITHUB_TOKEN>`에는 해당 저장소에 `Contents: write` 권한이 있는 GitHub Personal Access Token 또는 fine-grained token을 넣습니다.
 
 GitHub 저장소의 `Settings > Secrets and variables > Actions`에 `SECRET`이라는 이름으로 `.env`와 같은 형식의 값을 등록합니다.
 
@@ -205,4 +219,4 @@ SMTP_USE_SSL=false
 
 각 값을 개별 GitHub Actions Secret으로 등록해도 동작하지만, 이 워크플로우는 `SECRET` 하나에 위 내용을 모아 넣는 방식을 우선 지원합니다.
 
-수동으로 즉시 실행하려면 GitHub 저장소의 `Actions > Daily Bid Report > Run workflow`를 누릅니다.
+수동으로 즉시 실행하려면 GitHub 저장소의 `Actions > Daily Bid Report > Run workflow`를 누르거나, 위 `repository_dispatch`를 직접 호출합니다.
