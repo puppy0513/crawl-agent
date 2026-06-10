@@ -189,8 +189,8 @@ def render_compact_markdown_report(result: dict, *, report_date: str) -> str:
         "> 기준: 오픈이지 적합도, 수행 가능성, 전략 가치, 리스크를 종합해 선정",
         "> 단, 데이터 구축·개방·AI/SW 개발 중심 공고는 상위 추천에서 강하게 제한",
         "",
-        "|순위|공고명|기관|추천등급|점수|핵심 사유|URL|",
-        "|---|---|---|---|---|---|---|",
+        "|순위|공고명|기관|추천등급|점수|핵심 사유|",
+        "|---|---|---|---|---|---|",
     ]
 
     top_rows = []
@@ -202,15 +202,14 @@ def render_compact_markdown_report(result: dict, *, report_date: str) -> str:
             or f"공고 {index}"
         )
         org = item.get("dminsttNm") or item.get("department") or "-"
-        url = item.get("detailUrl") or "-"
         top_rows.append(
-            f"|{index}|{markdown_escape(title)}|{markdown_escape(org)}|-|-|원문 분석 없음|{markdown_escape(url)}|"
+            f"|{index}|{markdown_escape(title)}|{markdown_escape(org)}|-|-|원문 분석 없음|"
         )
 
     if top_rows:
         lines.extend(top_rows)
     else:
-        lines.append("|-|-|-|-|-|공고 없음|-|")
+        lines.append("|-|-|-|-|-|공고 없음|")
 
     return "\n".join(lines).rstrip() + "\n"
 
@@ -258,7 +257,6 @@ def build_analysis_prompt(result: dict, *, report_date: str) -> str:
 - "공고별 점수 산정 요약" 섹션은 작성하지 마세요.
 - "2) 우선 검토 공고 Top5" 아래에는 그 어떤 추가 섹션도 작성하지 마세요.
 - "## 2) 우선 검토 공고 Top 5" 표에는 C등급 이하 공고를 넣지 마세요.
-- "## 2) 우선 검토 공고 Top 5" 표의 마지막 열은 "URL"로 작성하세요.
 - "### 요약 판단", "공고별 평가 메모", "최종 액션 아이템" 같은 추가 본문은 작성하지 마세요.
 - 보고서 구조와 표현은 아래 예시 형식을 반드시 따르세요.
 
@@ -288,9 +286,9 @@ def build_analysis_prompt(result: dict, *, report_date: str) -> str:
 > 기준: 오픈이지 적합도, 수행 가능성, 전략 가치, 리스크를 종합해 선정
 > 단, 데이터 구축·개방·AI/SW 개발 중심 공고는 상위 추천에서 강하게 제한
 
-|순위|공고명|기관|추천등급|점수|핵심 사유|URL|
-|---|---|---|---|---|---|---|
-|1|공고명|기관|A|75|핵심 사유|https://example.com|
+|순위|공고명|기관|추천등급|점수|핵심 사유|
+|---|---|---|---|---|---|
+|1|공고명|기관|A|75|핵심 사유|
 
 ---
 
@@ -361,21 +359,6 @@ def allow_top_grade(grade: str) -> bool:
     return head in {"S", "A", "B"}
 
 
-def build_notice_url_index(result: dict) -> dict[str, str]:
-    index: dict[str, str] = {}
-    for item in result.get("g2b", {}).get("items") or []:
-        title = str(item.get("bidNtceNm") or "").strip()
-        url = str(item.get("detailUrl") or "").strip()
-        if title and url:
-            index[title] = url
-    for item in result.get("moel", {}).get("items") or []:
-        title = str(item.get("title") or "").strip()
-        url = str(item.get("detailUrl") or "").strip()
-        if title and url:
-            index[title] = url
-    return index
-
-
 def sanitize_top5_section(section: str, result: dict) -> str:
     lines = section.splitlines()
     table_header_idx = -1
@@ -397,23 +380,18 @@ def sanitize_top5_section(section: str, result: dict) -> str:
             rows.append(cols)
         row_idx += 1
 
-    url_index = build_notice_url_index(result)
     rebuilt_rows: list[str] = []
     for idx, cols in enumerate(rows[:5], start=1):
-        title = cols[1]
-        url = url_index.get(title, "-")
-        rebuilt_rows.append(
-            f"|{idx}|{title}|{cols[2]}|{cols[3]}|{cols[4]}|{cols[5]}|{url}|"
-        )
+        rebuilt_rows.append(f"|{idx}|{cols[1]}|{cols[2]}|{cols[3]}|{cols[4]}|{cols[5]}|")
 
     rebuilt_table = [
-        "|순위|공고명|기관|추천등급|점수|핵심 사유|URL|",
-        "|---|---|---|---|---|---|---|",
+        "|순위|공고명|기관|추천등급|점수|핵심 사유|",
+        "|---|---|---|---|---|---|",
     ]
     if rebuilt_rows:
         rebuilt_table.extend(rebuilt_rows)
     else:
-        rebuilt_table.append("|-|-|-|-|-|C등급 이하만 존재하여 추천 공고 없음|-|")
+        rebuilt_table.append("|-|-|-|-|-|C등급 이하만 존재하여 추천 공고 없음|")
 
     return "\n".join(lines[:table_header_idx] + rebuilt_table)
 
